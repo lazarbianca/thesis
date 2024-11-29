@@ -4,13 +4,13 @@ import ee
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 from shapely.geometry import Point
 
 # Authenticate and initialize Earth Engine
 ee.Authenticate()
 ee.Initialize(project='ee-biancalazar1403')
 
-# Load Romania boundary from GEE
 # Load Romania boundary from GEE
 dataset = ee.FeatureCollection("FAO/GAUL/2015/level0")
 romania = dataset.filter(ee.Filter.eq('ADM0_NAME', 'Romania'))
@@ -21,9 +21,6 @@ romania_gdf = gpd.GeoDataFrame.from_features(romania_geojson['features'])
 
 # Explicitly set CRS to EPSG:4326 since this is the CRS used in the GEE dataset
 romania_gdf = romania_gdf.set_crs('EPSG:4326', allow_override=True)
-
-# Now you can reproject to the same CRS (it will already be in EPSG:4326)
-# romania_gdf = romania_gdf.to_crs(epsg=4326)  # This is unnecessary because it's already in EPSG:4326
 
 # Load the forest data and process it as previously
 file_path = './datasets/2016-12-07_catalog_paduri_virgine_si_cvasivirgine.xlsx'
@@ -57,6 +54,12 @@ def split_coordinates(coord):
 def dms_to_dd(degrees, minutes, seconds):
     return degrees + minutes / 60 + seconds / 3600
 
+# Function to calculate the radius of the circle in meters
+def calculate_radius(hectares):
+    area_square_meters = hectares * 10_000  # Convert hectares to square meters
+    radius = math.sqrt(area_square_meters / math.pi)
+    return radius
+
 # Apply the conversion to Latitude and Longitude
 df['Latitude DMS'] = df['Latitude N'].apply(split_coordinates)
 df['Longitude DMS'] = df['Longitude E'].apply(split_coordinates)
@@ -81,9 +84,24 @@ geo_df = geo_df.set_crs('EPSG:4326')
 # Plot the map of Romania and the circles representing the forests
 fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
+# Plot circles representing forests
+for idx, row in geo_df.iterrows():
+    center = (row['Longitude'], row['Latitude'])
+    radius = calculate_radius(row['S (ha)']) / 111000  # Convert radius from meters to degrees (approximation)
+    radius *= 20  # for visualization purposes
+    circle = Circle(center, radius, color='blue', alpha=0.5)
+    ax.add_patch(circle)
+
 # Plot Romania boundary and forest locations on the same axes
-romania_gdf.plot(ax=ax, color='white', edgecolor='black')  # Plot Romania boundary
-geo_df.plot(ax=ax, color='blue', markersize=10, alpha=0.5)  # Plot forest points
+romania_gdf.plot(ax=ax, color='none', edgecolor='black')  # Plot Romania boundary on top
+
+# Set limits based on Romania's bounding box to maintain the correct aspect ratio
+minx, miny, maxx, maxy = romania_gdf.total_bounds
+ax.set_xlim(minx, maxx)
+ax.set_ylim(miny, maxy)
+
+# Ensure the aspect ratio is equal
+ax.set_aspect('equal')
 
 # Add title and labels
 plt.title('Virgin and Quasi-Virgin Forests of Romania')
